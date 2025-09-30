@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // User agent for Reddit API
-const USER_AGENT = 'OvedoApp/1.0';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
 // Clean subreddit name helper
 function cleanSubredditName(subreddit) {
@@ -64,7 +64,17 @@ app.get('/api/reddit/:subreddit', async (req, res) => {
         // Fetch from Reddit API
         const response = await axios.get(redditUrl, {
             headers: {
-                'User-Agent': USER_AGENT
+                'User-Agent': USER_AGENT,
+                'Accept': 'application/json',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0'
             },
             timeout: 10000 // 10 second timeout
         });
@@ -152,13 +162,27 @@ app.get('/api/reddit/:subreddit', async (req, res) => {
         console.error('❌ Server error:', error.message);
 
         if (error.response) {
-            // Reddit API error
-            res.status(error.response.status).json({
-                success: false,
-                error: 'Reddit API error',
-                message: `Reddit API error: ${error.response.status}`,
-                details: error.response.data
-            });
+            // Check if Reddit is blocking the request
+            const responseText = error.response.data?.toString() || '';
+            if (responseText.includes('blocked by network security') || 
+                responseText.includes('You\'ve been blocked') ||
+                responseText.includes('rate limit') ||
+                error.response.status === 429) {
+                res.status(429).json({
+                    success: false,
+                    error: 'REDDIT_BLOCKED',
+                    message: 'Reddit is blocking requests from this server. This is a temporary issue.',
+                    details: 'Reddit has implemented additional security measures that are blocking serverless function requests.'
+                });
+            } else {
+                // Other Reddit API errors
+                res.status(error.response.status).json({
+                    success: false,
+                    error: 'Reddit API error',
+                    message: `Reddit API error: ${error.response.status}`,
+                    details: error.response.data
+                });
+            }
         } else if (error.code === 'ECONNABORTED') {
             // Timeout error
             res.status(408).json({
@@ -206,7 +230,19 @@ app.post('/api/reddit/multiple', async (req, res) => {
                 console.log(`🌐 Fetching from r/${cleanSubreddit}`);
 
                 const response = await axios.get(redditUrl, {
-                    headers: { 'User-Agent': USER_AGENT },
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'application/json',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Cache-Control': 'max-age=0'
+                    },
                     timeout: 10000
                 });
 
@@ -288,11 +324,35 @@ app.post('/api/reddit/multiple', async (req, res) => {
 
     } catch (error) {
         console.error('❌ Server error:', error.message);
-        res.status(500).json({
-            success: false,
-            error: 'Server error',
-            message: error.message
-        });
+        
+        if (error.response) {
+            // Check if Reddit is blocking the request
+            const responseText = error.response.data?.toString() || '';
+            if (responseText.includes('blocked by network security') || 
+                responseText.includes('You\'ve been blocked') ||
+                responseText.includes('rate limit') ||
+                error.response.status === 429) {
+                res.status(429).json({
+                    success: false,
+                    error: 'REDDIT_BLOCKED',
+                    message: 'Reddit is blocking requests from this server. This is a temporary issue.',
+                    details: 'Reddit has implemented additional security measures that are blocking serverless function requests.'
+                });
+            } else {
+                res.status(error.response.status).json({
+                    success: false,
+                    error: 'Reddit API error',
+                    message: `Reddit API error: ${error.response.status}`,
+                    details: error.response.data
+                });
+            }
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Server error',
+                message: error.message
+            });
+        }
     }
 });
 
